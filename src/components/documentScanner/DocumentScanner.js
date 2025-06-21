@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
-import { View, Button, Image, StyleSheet, Text, ActivityIndicator } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Button, Image, StyleSheet, Text, ActivityIndicator, TouchableOpacity, Animated } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { WebView } from 'react-native-webview';
+import { createPDF } from '../services/PDFService'; // Assuming PDFService is in ../services
 
 const scannerHtml = `
 <!DOCTYPE html>
@@ -62,16 +64,15 @@ const scannerHtml = `
                     for (let i = 0; i < contours.size(); ++i) {
                         let contour = contours.get(i);
                         let area = cv.contourArea(contour, false);
-                        if (area > largestArea) {
+                        if (area > 1000) { // Filter small contours
                             let peri = cv.arcLength(contour, true);
                             let approx = new cv.Mat();
                             cv.approxPolyDP(contour, approx, 0.02 * peri, true);
                             if (approx.rows === 4) {
                                 largestArea = area;
-                                largestContour = approx;
-                            } else {
-                                approx.delete();
+                                largestContour = approx.clone();
                             }
+                            approx.delete();
                         }
                         contour.delete();
                     }
@@ -103,6 +104,7 @@ const scannerHtml = `
 
                         srcCorners.delete(); destCorners.delete(); M.delete();
                     } else {
+                        // Fallback to grayscale if no document is found
                         cv.cvtColor(src, processedMat, cv.COLOR_RGBA2GRAY, 0);
                     }
                     
@@ -110,7 +112,7 @@ const scannerHtml = `
                     cv.imshow(canvas, processedMat);
                     window.ReactNativeWebView.postMessage(JSON.stringify({
                         type: 'PROCESSED_IMAGE',
-                        payload: { base64: canvas.toDataURL('image/png', 0.9) }
+                        payload: { base64: canvas.toDataURL('image/jpeg', 0.9) }
                     }));
 
                     src.delete(); processedMat.delete(); gray.delete(); canny.delete(); contours.delete(); hierarchy.delete();
@@ -122,12 +124,36 @@ const scannerHtml = `
                      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: err.message }));
                 }
             };
-            img.src = 'data:image/jpeg;base64,' + base64;
+            img.src = base64;
         }
     </script>
 </body>
 </html>
 `;
+
+// Simple Toast component
+const Toast = ({ message, visible, onHide }) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (visible) {
+            Animated.sequence([
+                Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+                Animated.delay(2000),
+                Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true })
+            ]).start(() => onHide && onHide());
+        }
+    }, [visible, fadeAnim, onHide]);
+    
+    if (!visible) return null;
+
+    return (
+        <Animated.View style={[styles.toastContainer, { opacity: fadeAnim }]}>
+            <Text style={styles.toastText}>{message}</Text>
+        </Animated.View>
+    );
+};
+
 
 export default function DocumentScanner() {
     const [selectedImage, setSelectedImage] = useState(null);
@@ -135,29 +161,64 @@ export default function DocumentScanner() {
     const [isProcessing, setIsProcessing] = useState(false);
     const webViewRef = useRef(null);
     const [isWebViewReady, setIsWebViewReady] = useState(false);
+    const [toast, setToast] = useState({ visible: false, message: '' });
+
+    const showToast = (message) => setToast({ visible: true, message });
 
     const pickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
             quality: 1,
+            base64: true, // Ask picker to include base64
         });
 
-        if (!result.canceled) {
-            setSelectedImage(result.assets[0].uri);
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            const asset = result.assets[0];
+            setSelectedImage(asset.uri);
             setProcessedImage(null);
-            setIsProcessing(true);
-            const base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
-                encoding: FileSystem.EncodingType.Base64,
-            });
             if (isWebViewReady && webViewRef.current) {
-                 webViewRef.current.postMessage(JSON.stringify({
+                setIsProcessing(true);
+                webViewRef.current.postMessage(JSON.stringify({
                     type: 'PROCESS_IMAGE',
-                    payload: { base64 }
+                    payload: { base64: `data:image/jpeg;base64,${asset.base64}` }
                 }));
+            } else {
+                showToast("Scanner is not ready yet.");
             }
         }
     };
+    
+    const handleAction = async (action) => {
+        if (!processedImage) return;
+        const filename = `scan_${Date.now()}.jpg`;
+        const fileUri = FileSystem.cacheDirectory + filename;
+
+        // The processedImage is already a data URI: "data:image/jpeg;base64,..."
+        // We need to extract the raw base64 part.
+        const base64Data = processedImage.split(',')[1];
+    
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+
+        if (action === 'save') {
+            showToast('Saved to cache!'); // In real app, would move to permanent storage
+        } else if (action === 'share') {
+            await Sharing.shareAsync(fileUri);
+        } else if (action === 'pdf') {
+            setIsProcessing(true);
+            try {
+                const pdfPath = await createPDF(fileUri);
+                await Sharing.shareAsync(pdfPath);
+            } catch(e) {
+                showToast('Error creating PDF.');
+            } finally {
+                setIsProcessing(false);
+            }
+        }
+    };
+
 
     const handleWebViewMessage = (event) => {
         const message = JSON.parse(event.nativeEvent.data);
@@ -168,16 +229,19 @@ export default function DocumentScanner() {
             case 'PROCESSED_IMAGE':
                 setProcessedImage(message.payload.base64);
                 setIsProcessing(false);
+                showToast('Scan successful!');
                 break;
             case 'ERROR':
                 console.error('WebView Error:', message.payload);
                 setIsProcessing(false);
+                showToast('An error occurred during scanning.');
                 break;
         }
     };
 
     return (
         <View style={styles.container}>
+            <Toast message={toast.message} visible={toast.visible} onHide={() => setToast({ ...toast, visible: false })} />
             <View style={styles.webviewContainer}>
                 <WebView
                     ref={webViewRef}
@@ -188,9 +252,8 @@ export default function DocumentScanner() {
                     domStorageEnabled
                 />
             </View>
-            <Button title="Pick an Image" onPress={pickImage} disabled={!isWebViewReady} />
-            {isProcessing && <ActivityIndicator size="large" color="#0000ff" />}
-
+            <Button title="Pick an Image from Library" onPress={pickImage} disabled={!isWebViewReady || isProcessing} />
+            
             <View style={styles.imagesContainer}>
                 {selectedImage && (
                     <View style={styles.imageBox}>
@@ -198,13 +261,28 @@ export default function DocumentScanner() {
                         <Image source={{ uri: selectedImage }} style={styles.image} />
                     </View>
                 )}
-                {processedImage && (
+                {isProcessing && <View style={styles.imageBox}><ActivityIndicator size="large" color="#0000ff" /></View>}
+                {processedImage && !isProcessing && (
                     <View style={styles.imageBox}>
                         <Text style={styles.imageLabel}>Scanned</Text>
                         <Image source={{ uri: processedImage }} style={styles.image} />
                     </View>
                 )}
             </View>
+
+            {processedImage && !isProcessing && (
+                 <View style={styles.actionsContainer}>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('save')}>
+                        <Text>Save</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('share')}>
+                        <Text>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('pdf')}>
+                        <Text>Create PDF</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
         </View>
     );
 }
@@ -213,12 +291,13 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
+        paddingTop: 50,
+        paddingHorizontal: 20,
+        backgroundColor: '#fff',
     },
     webviewContainer: {
         width: '100%',
-        height: 50, // Minimal height to show status, can be 0 if not needed
+        height: 50,
         borderColor: '#ccc',
         borderWidth: 1,
         marginBottom: 10,
@@ -227,14 +306,18 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-around',
         width: '100%',
+        height: 220,
         marginTop: 20,
     },
     imageBox: {
         alignItems: 'center',
-    },
-    image: {
+        justifyContent: 'center',
         width: 150,
         height: 200,
+    },
+    image: {
+        width: '100%',
+        height: '100%',
         resizeMode: 'contain',
         borderWidth: 1,
         borderColor: '#999',
@@ -243,4 +326,30 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         marginBottom: 5,
     },
+    actionsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        width: '100%',
+        marginTop: 20,
+    },
+    actionButton: {
+        backgroundColor: '#ddd',
+        padding: 15,
+        borderRadius: 5,
+    },
+    toastContainer: {
+        position: 'absolute',
+        bottom: 50,
+        left: 20,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        borderRadius: 25,
+        padding: 15,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+    },
+    toastText: {
+        color: 'white',
+    }
 }); 
