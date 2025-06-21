@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/akash-d122/print-helper/compare/v1.0.0...v1.1.0) (2025-06-21)
+
+
+### Features
+
+* add Expo-compatible DocumentScanner using WebView and OpenCV.js ([287def1](https://github.com/akash-d122/print-helper/commit/287def18adafcb586e8e927fae9cc1ca3c12bb54))
+
 # 1.0.0 (2025-06-21)
 
 
