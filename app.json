@@ -1,29 +1,56 @@
 {
   "expo": {
-    "name": "A4PrintStudio",
-    "slug": "A4PrintStudio",
+    "name": "A4 Print Studio",
+    "slug": "a4-print-studio",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "assetBundlePatterns": ["**/*"],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.printshop.a4studio",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to camera to capture images for printing.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to photo library to select images for printing."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FFFFFF"
       },
-      "edgeToEdgeEnabled": true
+      "package": "com.printshop.a4studio",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-image-picker",
+      "expo-media-library",
+      "expo-document-picker",
+      "expo-camera",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ]
+    ],
+    "sdkVersion": "53.0.0"
   }
 }
