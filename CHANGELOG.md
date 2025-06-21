@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/akash-d122/print-helper/compare/v1.2.0...v1.3.0) (2025-06-21)
+
+
+### Features
+
+* add batch scanning, grayscale filters, and multi-page PDF generation ([39be779](https://github.com/akash-d122/print-helper/commit/39be7794d6723b80be39e7e17cad9a485de09a01))
+
 # [1.2.0](https://github.com/akash-d122/print-helper/compare/v1.1.0...v1.2.0) (2025-06-21)
 
 
