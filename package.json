@@ -54,6 +54,7 @@
     "react-native-svg": "15.11.2",
     "react-native-vector-icons": "^10.0.3",
     "react-native-view-shot": "^4.0.3",
+    "react-native-webview": "^13.13.5",
     "react-redux": "^9.0.4",
     "redux-persist": "^6.0.0",
     "uuid": "^9.0.1"
