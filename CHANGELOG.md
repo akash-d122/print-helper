@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/akash-d122/print-helper/compare/v1.1.0...v1.2.0) (2025-06-21)
+
+
+### Features
+
+* enhance DocumentScanner with save, share, and PDF functionality ([74b9469](https://github.com/akash-d122/print-helper/commit/74b94691e2ce6cc05c1af3f654e7fa1ceab10054))
+
 # [1.1.0](https://github.com/akash-d122/print-helper/compare/v1.0.0...v1.1.0) (2025-06-21)
 
 
