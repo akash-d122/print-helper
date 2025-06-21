@@ -17,5 +17,5 @@ module.exports = {
   coverageReporters: ['lcov', 'text', 'html'],
   coverageDirectory: 'coverage',
   coveragePathIgnorePatterns: ['/node_modules/', '/__tests__/', '/test-utils/'],
-  reporters: ['default', '<rootDir>/test-utils/customReporter.js'],
+  reporters: ['default'],
 }; 
