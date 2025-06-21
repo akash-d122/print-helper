@@ -1,10 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Button, Image, StyleSheet, Text, ActivityIndicator, TouchableOpacity, Animated } from 'react-native';
+import { View, Button, Image, StyleSheet, Text, ActivityIndicator, TouchableOpacity, Animated, FlatList } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { WebView } from 'react-native-webview';
-import { createPDF } from '../services/PDFService'; // Assuming PDFService is in ../services
+import { createPDF } from '../services/PDFService';
+
+const SCANS_DIR = FileSystem.cacheDirectory + 'scans/';
+
+// Helper to ensure scan directory exists
+async function ensureScanDir() {
+    const dirInfo = await FileSystem.getInfoAsync(SCANS_DIR);
+    if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(SCANS_DIR, { intermediates: true });
+    }
+}
 
 const scannerHtml = `
 <!DOCTYPE html>
@@ -17,16 +27,24 @@ const scannerHtml = `
         body, html { margin: 0; padding: 0; font-family: sans-serif; background-color: #f0f0f0; color: #333; }
         .container { padding: 10px; text-align: center; }
         .status { font-weight: bold; }
+        #filterContainer { margin-top: 10px; }
+        .filter-btn { padding: 5px 10px; margin: 0 5px; border: 1px solid #ccc; background: #fff; border-radius: 5px; }
     </style>
 </head>
 <body>
     <div class="container">
         <p class="status">OpenCV.js Status: <span id="status">Loading...</span></p>
+         <div id="filterContainer">
+            <button class="filter-btn" onclick="applyFilter('none')">Original</button>
+            <button class="filter-btn" onclick="applyFilter('gray')">Grayscale</button>
+            <button class="filter-btn" onclick="applyFilter('contrast')">Contrast</button>
+        </div>
     </div>
     <canvas id="outputCanvas" style="display: none;"></canvas>
 
     <script>
         const statusEl = document.getElementById('status');
+        let originalBase64 = null;
         
         cv.onRuntimeInitialized = () => {
             statusEl.textContent = 'Ready.';
@@ -36,11 +54,17 @@ const scannerHtml = `
         document.addEventListener('message', event => {
             const message = JSON.parse(event.data);
             if (message.type === 'PROCESS_IMAGE') {
-                processImage(message.payload.base64);
+                originalBase64 = message.payload.base64;
+                processImage(originalBase64);
             }
         });
 
-        function processImage(base64) {
+        function applyFilter(filter) {
+            if (!originalBase64) return;
+            processImage(originalBase64, filter);
+        }
+
+        function processImage(base64, filter = 'none') {
             statusEl.textContent = 'Processing...';
             const img = new Image();
             img.onload = () => {
@@ -51,10 +75,8 @@ const scannerHtml = `
                     let gray = new cv.Mat();
                     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
                     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
-
                     let canny = new cv.Mat();
                     cv.Canny(gray, canny, 50, 100, 3, false);
-
                     let contours = new cv.MatVector();
                     let hierarchy = new cv.Mat();
                     cv.findContours(canny, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
@@ -64,7 +86,7 @@ const scannerHtml = `
                     for (let i = 0; i < contours.size(); ++i) {
                         let contour = contours.get(i);
                         let area = cv.contourArea(contour, false);
-                        if (area > 1000) { // Filter small contours
+                        if (area > 1000) {
                             let peri = cv.arcLength(contour, true);
                             let approx = new cv.Mat();
                             cv.approxPolyDP(contour, approx, 0.02 * peri, true);
@@ -78,36 +100,38 @@ const scannerHtml = `
                     }
 
                     if (largestContour) {
+                        // Perspective transform logic
                         const points = [];
                         for(let i=0; i < largestContour.rows; i++) {
                             points.push({x: largestContour.data32S[i*2], y: largestContour.data32S[i*2+1]});
                         }
-                        
                         points.sort((a, b) => a.y - b.y);
                         const [pt1, pt2] = points.slice(0, 2).sort((a, b) => a.x - b.x);
                         const [pt3, pt4] = points.slice(2, 4).sort((a, b) => a.x - b.x);
                         const corners = [pt1, pt2, pt4, pt3];
-
                         const w1 = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
                         const w2 = Math.hypot(corners[2].x - corners[3].x, corners[2].y - corners[3].y);
                         const h1 = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
                         const h2 = Math.hypot(corners[2].x - corners[1].x, corners[2].y - corners[1].y);
                         const maxWidth = Math.max(w1, w2);
                         const maxHeight = Math.max(h1, h2);
-
                         const destCorners = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, maxWidth - 1, 0, maxWidth - 1, maxHeight - 1, 0, maxHeight - 1]);
                         const srcCorners = cv.matFromArray(4, 1, cv.CV_32FC2, corners.flatMap(p => [p.x, p.y]));
-
                         const M = cv.getPerspectiveTransform(srcCorners, destCorners);
                         cv.warpPerspective(src, processedMat, M, new cv.Size(maxWidth, maxHeight));
-                        cv.cvtColor(processedMat, processedMat, cv.COLOR_RGBA2GRAY, 0);
-
                         srcCorners.delete(); destCorners.delete(); M.delete();
                     } else {
-                        // Fallback to grayscale if no document is found
-                        cv.cvtColor(src, processedMat, cv.COLOR_RGBA2GRAY, 0);
+                        src.copyTo(processedMat); // Use original if no contour found
                     }
                     
+                    // Apply selected filter
+                    if (filter === 'gray') {
+                        cv.cvtColor(processedMat, processedMat, cv.COLOR_RGBA2GRAY, 0);
+                    } else if (filter === 'contrast') {
+                         cv.cvtColor(processedMat, processedMat, cv.COLOR_RGBA2GRAY, 0); // Must be grayscale for equalizeHist
+                         cv.equalizeHist(processedMat, processedMat);
+                    }
+
                     const canvas = document.getElementById('outputCanvas');
                     cv.imshow(canvas, processedMat);
                     window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -155,13 +179,17 @@ const Toast = ({ message, visible, onHide }) => {
 };
 
 
-export default function DocumentScanner() {
-    const [selectedImage, setSelectedImage] = useState(null);
+export default function ScanScreen() {
+    const [scannedImages, setScannedImages] = useState([]);
     const [processedImage, setProcessedImage] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const webViewRef = useRef(null);
     const [isWebViewReady, setIsWebViewReady] = useState(false);
     const [toast, setToast] = useState({ visible: false, message: '' });
+
+    useEffect(() => {
+        ensureScanDir();
+    }, []);
 
     const showToast = (message) => setToast({ visible: true, message });
 
@@ -170,12 +198,11 @@ export default function DocumentScanner() {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: false,
             quality: 1,
-            base64: true, // Ask picker to include base64
+            base64: true,
         });
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
             const asset = result.assets[0];
-            setSelectedImage(asset.uri);
             setProcessedImage(null);
             if (isWebViewReady && webViewRef.current) {
                 setIsProcessing(true);
@@ -189,36 +216,34 @@ export default function DocumentScanner() {
         }
     };
     
-    const handleAction = async (action) => {
+    const saveAndAddNewScan = async () => {
         if (!processedImage) return;
         const filename = `scan_${Date.now()}.jpg`;
-        const fileUri = FileSystem.cacheDirectory + filename;
-
-        // The processedImage is already a data URI: "data:image/jpeg;base64,..."
-        // We need to extract the raw base64 part.
+        const fileUri = SCANS_DIR + filename;
         const base64Data = processedImage.split(',')[1];
-    
         await FileSystem.writeAsStringAsync(fileUri, base64Data, {
             encoding: FileSystem.EncodingType.Base64,
         });
-
-        if (action === 'save') {
-            showToast('Saved to cache!'); // In real app, would move to permanent storage
-        } else if (action === 'share') {
-            await Sharing.shareAsync(fileUri);
-        } else if (action === 'pdf') {
-            setIsProcessing(true);
-            try {
-                const pdfPath = await createPDF(fileUri);
-                await Sharing.shareAsync(pdfPath);
-            } catch(e) {
-                showToast('Error creating PDF.');
-            } finally {
-                setIsProcessing(false);
-            }
-        }
+        setScannedImages([...scannedImages, fileUri]);
+        setProcessedImage(null); // Clear preview for next scan
+        showToast('Page added!');
     };
 
+    const createBatchPDF = async () => {
+        if (scannedImages.length === 0) return;
+        setIsProcessing(true);
+        try {
+            const pdfPath = await createPDF(scannedImages);
+            await Sharing.shareAsync(pdfPath);
+            await FileSystem.deleteAsync(SCANS_DIR, { idempotent: true });
+            setScannedImages([]);
+        } catch(e) {
+            console.error(e);
+            showToast('Error creating multi-page PDF.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
 
     const handleWebViewMessage = (event) => {
         const message = JSON.parse(event.nativeEvent.data);
@@ -229,7 +254,6 @@ export default function DocumentScanner() {
             case 'PROCESSED_IMAGE':
                 setProcessedImage(message.payload.base64);
                 setIsProcessing(false);
-                showToast('Scan successful!');
                 break;
             case 'ERROR':
                 console.error('WebView Error:', message.payload);
@@ -238,6 +262,10 @@ export default function DocumentScanner() {
                 break;
         }
     };
+
+    const renderThumbnail = ({ item }) => (
+        <Image source={{ uri: item }} style={styles.thumbnail} />
+    );
 
     return (
         <View style={styles.container}>
@@ -252,37 +280,33 @@ export default function DocumentScanner() {
                     domStorageEnabled
                 />
             </View>
-            <Button title="Pick an Image from Library" onPress={pickImage} disabled={!isWebViewReady || isProcessing} />
             
-            <View style={styles.imagesContainer}>
-                {selectedImage && (
-                    <View style={styles.imageBox}>
-                        <Text style={styles.imageLabel}>Original</Text>
-                        <Image source={{ uri: selectedImage }} style={styles.image} />
-                    </View>
-                )}
-                {isProcessing && <View style={styles.imageBox}><ActivityIndicator size="large" color="#0000ff" /></View>}
-                {processedImage && !isProcessing && (
-                    <View style={styles.imageBox}>
-                        <Text style={styles.imageLabel}>Scanned</Text>
-                        <Image source={{ uri: processedImage }} style={styles.image} />
-                    </View>
+            <View style={styles.mainContent}>
+                {isProcessing && <ActivityIndicator size="large" color="#0000ff" />}
+                {!isProcessing && processedImage && (
+                    <Image source={{ uri: processedImage }} style={styles.previewImage} />
                 )}
             </View>
 
-            {processedImage && !isProcessing && (
-                 <View style={styles.actionsContainer}>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('save')}>
-                        <Text>Save</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('share')}>
-                        <Text>Share</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.actionButton} onPress={() => handleAction('pdf')}>
-                        <Text>Create PDF</Text>
-                    </TouchableOpacity>
-                </View>
-            )}
+            <View style={styles.thumbnailContainer}>
+                <FlatList
+                    data={scannedImages}
+                    renderItem={renderThumbnail}
+                    keyExtractor={(item) => item}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                />
+            </View>
+
+            <View style={styles.actionsContainer}>
+                <Button title="Scan New Page" onPress={pickImage} disabled={!isWebViewReady || isProcessing} />
+                {processedImage && !isProcessing && (
+                    <Button title="Add to Batch" onPress={saveAndAddNewScan} />
+                )}
+                {scannedImages.length > 0 && !isProcessing && (
+                    <Button title={`Create PDF (${scannedImages.length})`} onPress={createBatchPDF} />
+                )}
+            </View>
         </View>
     );
 }
@@ -292,50 +316,47 @@ const styles = StyleSheet.create({
         flex: 1,
         alignItems: 'center',
         paddingTop: 50,
-        paddingHorizontal: 20,
         backgroundColor: '#fff',
     },
     webviewContainer: {
         width: '100%',
-        height: 50,
+        height: 80,
         borderColor: '#ccc',
         borderWidth: 1,
-        marginBottom: 10,
     },
-    imagesContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-around',
+    mainContent: {
+        flex: 1,
         width: '100%',
-        height: 220,
-        marginTop: 20,
-    },
-    imageBox: {
-        alignItems: 'center',
         justifyContent: 'center',
-        width: 150,
-        height: 200,
+        alignItems: 'center',
+        padding: 10,
     },
-    image: {
+    previewImage: {
         width: '100%',
         height: '100%',
         resizeMode: 'contain',
+    },
+    thumbnailContainer: {
+        height: 100,
+        width: '100%',
+        backgroundColor: '#f0f0f0',
+        padding: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#ccc',
+    },
+    thumbnail: {
+        width: 80,
+        height: 80,
+        resizeMode: 'cover',
+        marginHorizontal: 5,
         borderWidth: 1,
         borderColor: '#999',
-    },
-    imageLabel: {
-        fontWeight: 'bold',
-        marginBottom: 5,
     },
     actionsContainer: {
         flexDirection: 'row',
         justifyContent: 'space-around',
         width: '100%',
-        marginTop: 20,
-    },
-    actionButton: {
-        backgroundColor: '#ddd',
-        padding: 15,
-        borderRadius: 5,
+        padding: 20,
     },
     toastContainer: {
         position: 'absolute',

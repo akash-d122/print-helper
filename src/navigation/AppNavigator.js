@@ -7,6 +7,7 @@ import ExportScreen from '../screens/ExportScreen';
 import BatchProcessingScreen from '../screens/BatchProcessingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ExportHistoryScreen from '../screens/ExportHistoryScreen';
+import ScanScreen from '../screens/ScanScreen';
 import { CanvasRefProvider } from '../context/CanvasRefContext';
 
 const Stack = createStackNavigator();
@@ -30,6 +31,11 @@ const AppNavigator = () => {
           name="Home" 
           component={HomeScreen}
           options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Scan" 
+          component={ScanScreen}
+          options={{ title: 'Scan Document' }}
         />
         <Stack.Screen 
           name="ImagePicker" 

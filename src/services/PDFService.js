@@ -25,22 +25,31 @@ export async function captureCanvas(ref, dpi = 300) {
   });
 }
 
-export async function createPDF(imageUri, dpi = 300) {
+export async function createPDF(imageUris, dpi = 300) {
+  if (!Array.isArray(imageUris)) {
+    imageUris = [imageUris]; // Backwards compatibility
+  }
+
   await ensureExportDir();
   const pdfPath = `${EXPORT_DIR}A4Print_${Date.now()}.pdf`;
   const pageWidth = Math.round(8.27 * dpi);
   const pageHeight = Math.round(11.69 * dpi);
-  const pdf = PDFDocument.create(pdfPath)
-    .addPages([
+  
+  const pdf = PDFDocument.create(pdfPath);
+
+  for (const imageUri of imageUris) {
+    pdf.addPage(
       PDFDocument.Page.create()
         .setMediaBox(pageWidth, pageHeight)
-        .drawImage(imageUri, 'png', {
+        .drawImage(imageUri, 'jpeg', { // Assuming jpeg from scanner
           x: 0,
           y: 0,
           width: pageWidth,
           height: pageHeight,
         })
-    ]);
+    );
+  }
+
   await pdf.write();
   return pdfPath;
 }
