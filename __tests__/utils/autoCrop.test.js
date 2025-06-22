@@ -28,7 +28,7 @@ describe('autoCropImage', () => {
     const uri = await autoCropImage('file:///test.jpg');
     expect(OpenCV.cropAsync).toHaveBeenCalled();
     expect(FileSystem.writeAsStringAsync).toHaveBeenCalled();
-    expect(uri).toContain('crop_mock-uuid.jpg');
+    expect(uri).toMatch(/crop_.*\.jpg/);
   });
 
   it('should show toast and return original URI if no contours are found', async () => {

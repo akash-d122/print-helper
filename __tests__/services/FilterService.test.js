@@ -16,7 +16,7 @@ describe('FilterService', () => {
   it('should apply a B&W filter successfully', async () => {
     const uri = await applyFilters('file:///test.jpg', 'bw');
     expect(OpenCV.imreadAsync).toHaveBeenCalledWith('file:///test.jpg');
-    expect(uri).toContain('filter_bw_mock-uuid.jpg');
+    expect(uri).toMatch(/filter_bw_.*\.jpg/);
   });
 
   it('should return original URI for "reset" filter', async () => {

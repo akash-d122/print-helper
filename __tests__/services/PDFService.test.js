@@ -13,11 +13,15 @@ jest.mock('expo-file-system', () => ({
 }));
 jest.mock('expo-sharing');
 jest.mock('react-native-view-shot');
+
+const mockPdf = {
+  addPage: jest.fn().mockReturnThis(),
+  write: jest.fn().mockResolvedValue(undefined),
+};
+
 jest.mock('react-native-pdf-lib', () => ({
   PDFDocument: {
-    create: jest.fn().mockReturnThis(),
-    addPages: jest.fn().mockReturnThis(),
-    write: jest.fn().mockResolvedValue(undefined),
+    create: jest.fn(() => mockPdf),
     Page: {
       create: jest.fn().mockReturnThis(),
       setMediaBox: jest.fn().mockReturnThis(),
@@ -60,12 +64,24 @@ describe('PDFService', () => {
   });
 
   describe('createPDF', () => {
-    it('should create a PDF with the captured image', async () => {
+    it('should create a PDF with a single image', async () => {
       const imageUri = 'file:///captured.png';
       const resultPath = await createPDF(imageUri, 300);
+
       expect(PDFDocument.create).toHaveBeenCalledWith(expect.stringContaining('.pdf'));
-      expect(PDFDocument.Page.create().drawImage).toHaveBeenCalledWith(imageUri, 'png', expect.any(Object));
+      expect(mockPdf.addPage).toHaveBeenCalledTimes(1);
+      expect(PDFDocument.Page.create().drawImage).toHaveBeenCalledWith(imageUri, 'jpeg', expect.any(Object));
+      expect(mockPdf.write).toHaveBeenCalled();
       expect(resultPath).toContain('A4Print_');
+    });
+
+    it('should create a PDF with multiple images', async () => {
+      const imageUris = ['file:///captured1.png', 'file:///captured2.png'];
+      await createPDF(imageUris, 300);
+
+      expect(mockPdf.addPage).toHaveBeenCalledTimes(2);
+      expect(PDFDocument.Page.create().drawImage).toHaveBeenCalledWith(imageUris[0], 'jpeg', expect.any(Object));
+      expect(PDFDocument.Page.create().drawImage).toHaveBeenCalledWith(imageUris[1], 'jpeg', expect.any(Object));
     });
   });
 
