@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/akash-d122/print-helper/compare/v1.3.0...v1.3.1) (2025-06-22)
+
+
+### Bug Fixes
+
+* improve stability of GitHub Actions for consistent release workflow ([aa33cf7](https://github.com/akash-d122/print-helper/commit/aa33cf7fc74acd25b9661a02263b0c78571d4d6f))
+
 # [1.3.0](https://github.com/akash-d122/print-helper/compare/v1.2.0...v1.3.0) (2025-06-21)
 
 
