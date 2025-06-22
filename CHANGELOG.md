@@ -1,3 +1,13 @@
+## [1.3.2](https://github.com/akash-d122/print-helper/compare/v1.3.1...v1.3.2) (2025-06-22)
+
+
+### Bug Fixes
+
+* align node version in release workflow to fix test failures ([3c7a110](https://github.com/akash-d122/print-helper/commit/3c7a11066504cfca598d6912a1d304af5d908c3d))
+* prevent duplicate GitHub Actions triggering on push ([c683539](https://github.com/akash-d122/print-helper/commit/c6835390ca9f7d16c9a9cbf1419657586cc6bc81))
+* remove duplicate ci.yml workflow ([7635f6d](https://github.com/akash-d122/print-helper/commit/7635f6d41157712aa373b9af5ebddb0fdeee4db3))
+* **tests:** repair broken tests for PDFService and auto-cropping ([c0065bb](https://github.com/akash-d122/print-helper/commit/c0065bb4490da9b2f93d4706bef7b1e803718a38))
+
 ## [1.3.1](https://github.com/akash-d122/print-helper/compare/v1.3.0...v1.3.1) (2025-06-22)
 
 
