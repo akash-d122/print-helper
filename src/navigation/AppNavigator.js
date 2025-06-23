@@ -8,6 +8,7 @@ import BatchProcessingScreen from '../screens/BatchProcessingScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import ExportHistoryScreen from '../screens/ExportHistoryScreen';
 import ScanScreen from '../screens/ScanScreen';
+import ManualCropScreen from '../screens/ManualCropScreen';
 import { CanvasRefProvider } from '../context/CanvasRefContext';
 
 const Stack = createStackNavigator();
@@ -66,6 +67,11 @@ const AppNavigator = () => {
           name="ExportHistory" 
           component={ExportHistoryScreen}
           options={{ title: 'Export History' }}
+        />
+        <Stack.Screen 
+          name="ManualCrop" 
+          component={ManualCropScreen}
+          options={{ title: 'Crop Image' }}
         />
       </Stack.Navigator>
     </CanvasRefProvider>

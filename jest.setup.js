@@ -94,6 +94,7 @@ jest.mock('expo-media-library', () => ({
   getAssetsAsync: jest.fn(),
 }));
 
+/*
 jest.mock('react-native-opencv3', () => ({
   CV_8SC: jest.fn(),
   imread: jest.fn(),
@@ -101,6 +102,7 @@ jest.mock('react-native-opencv3', () => ({
   cropAsync: jest.fn().mockResolvedValue('cropped_image'),
   cvtColorAsync: jest.fn().mockResolvedValue('converted_image'),
 }));
+*/
 
 jest.mock('./src/utils/ExportLogger', () => ({
   addToExportHistory: jest.fn().mockResolvedValue(true),

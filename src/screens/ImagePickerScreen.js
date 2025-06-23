@@ -1,13 +1,64 @@
-import React, { useState } from 'react';
-import { View, Text, Button, FlatList, Image, TouchableOpacity, StyleSheet, Alert, Modal, Pressable } from 'react-native';
+import React from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { View, Text, Button, FlatList, Image, StyleSheet, Alert, Modal, Pressable } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as MediaLibrary from 'expo-media-library';
 import { PRINT_CONFIG } from '../utils/constants';
 import { useDispatch } from 'react-redux';
-import { setSelectedImages } from '../store/imageSlice';
-import { autoCropImage } from '../utils/autoCrop';
+import { setSelectedImages as dispatchSetSelectedImages } from '../store/imageSlice';
 import LoadingOverlay from '../components/common/LoadingOverlay';
 import { useNavigation } from '@react-navigation/native';
+import { WebView } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system';
+import { v4 as uuidv4 } from 'uuid';
+
+const workerHtml = require('../workers/cropper.html');
+
+const AutoCropManager = ({ imageUri, onCropComplete, onCropError }) => {
+    const webViewRef = useRef(null);
+    const [isWebViewReady, setWebViewReady] = useState(false);
+
+    useEffect(() => {
+        if (isWebViewReady && imageUri && webViewRef.current) {
+            FileSystem.readAsStringAsync(imageUri, { encoding: FileSystem.EncodingType.Base64 })
+                .then(base64 => {
+                    const dataUrl = `data:image/jpeg;base64,${base64}`;
+                    const message = JSON.stringify({ type: 'PROCESS_IMAGE', payload: { uri: dataUrl } });
+                    webViewRef.current.postMessage(message);
+                })
+                .catch(onCropError);
+        }
+    }, [isWebViewReady, imageUri, onCropError]);
+
+    const handleMessage = (event) => {
+        const { type, payload } = JSON.parse(event.nativeEvent.data);
+        switch (type) {
+            case 'READY':
+                setWebViewReady(true);
+                break;
+            case 'SUCCESS':
+                onCropComplete(payload.uri);
+                break;
+            case 'ERROR':
+                onCropError(new Error(payload));
+                break;
+        }
+    };
+
+    if (!imageUri) return null;
+
+    return (
+        <View style={{ width: 0, height: 0 }}>
+            <WebView
+                ref={webViewRef}
+                source={workerHtml}
+                onMessage={handleMessage}
+                javaScriptEnabled
+                domStorageEnabled
+            />
+        </View>
+    );
+};
 
 const ImagePickerScreen = () => {
   const [selectedImages, setSelectedImagesState] = useState([]);
@@ -17,9 +68,9 @@ const ImagePickerScreen = () => {
   const [pendingImages, setPendingImages] = useState([]);
   const [currentCropIdx, setCurrentCropIdx] = useState(0);
   const [cropping, setCropping] = useState(false);
+  const [croppingUri, setCroppingUri] = useState(null);
   const navigation = useNavigation();
 
-  // Pick images from gallery
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -28,7 +79,7 @@ const ImagePickerScreen = () => {
     }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaType.Images,
         allowsMultipleSelection: true,
         quality: 1,
         selectionLimit: PRINT_CONFIG.maxBatchSize,
@@ -49,7 +100,6 @@ const ImagePickerScreen = () => {
     }
   };
 
-  // Shortcut to WhatsApp Images folder (Android only)
   const pickWhatsAppImages = async () => {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -57,7 +107,6 @@ const ImagePickerScreen = () => {
         setError('Permission to access media library is required!');
         return;
       }
-      // WhatsApp Images path (Android)
       const waDir = 'WhatsApp/Media/WhatsApp Images';
       const waAssets = await MediaLibrary.getAssetsAsync({
         first: PRINT_CONFIG.maxBatchSize,
@@ -74,14 +123,7 @@ const ImagePickerScreen = () => {
       setError('Failed to access WhatsApp Images.');
     }
   };
-
-  // Stub for auto crop (replace with real edge detection/crop logic)
-  const autoCropImage = async (img) => {
-    // TODO: Implement edge detection and crop
-    return img.uri; // For now, just return original
-  };
-
-  // Stub for manual crop (replace with real crop UI navigation)
+  
   const manualCropImage = async (img) => {
     return new Promise((resolve) => {
       navigation.navigate('ManualCrop', {
@@ -93,27 +135,65 @@ const ImagePickerScreen = () => {
     });
   };
 
-  // After picking images, show crop modal for each
   const handlePickedImages = (images) => {
     setPendingImages(images);
     setCurrentCropIdx(0);
     setCropModalVisible(true);
   };
 
+  const onCropComplete = async (resultUri) => {
+    try {
+        const base64Data = resultUri.split(',')[1];
+        const newUri = `${FileSystem.cacheDirectory}crop_${uuidv4()}.jpg`;
+        await FileSystem.writeAsStringAsync(newUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        const img = pendingImages[currentCropIdx];
+        const updated = [...selectedImages, { ...img, uri: newUri }];
+        setSelectedImagesState(updated);
+        dispatch(dispatchSetSelectedImages(updated));
+        
+        setCropping(false);
+        setCroppingUri(null);
+
+        if (currentCropIdx < pendingImages.length - 1) {
+            setCurrentCropIdx(currentCropIdx + 1);
+        } else {
+            setCropModalVisible(false);
+        }
+    } catch (e) {
+        onCropError(e);
+    }
+  };
+
+  const onCropError = (e) => {
+    console.error(e);
+    setCropping(false);
+    setCroppingUri(null);
+    Alert.alert('Crop Failed', 'Could not auto-crop the image. Skipping crop.');
+    handleCropOption('skip');
+  }
+
   // Handle crop option selection
   const handleCropOption = async (option) => {
     const img = pendingImages[currentCropIdx];
-    let uri = img.uri;
     if (option === 'auto') {
       setCropping(true);
-      uri = await autoCropImage(img.uri);
-      setCropping(false);
+      setCroppingUri(img.uri); // This triggers the AutoCropManager
+      return; // The rest is handled by onCropComplete/onCropError
     }
-    if (option === 'manual') uri = await manualCropImage(img);
-    // Save to Redux
+
+    let uri = img.uri;
+    if (option === 'manual') {
+      uri = await manualCropImage(img);
+    }
+    
+    // Save to Redux for 'manual' and 'skip'
     const updated = [...selectedImages, { ...img, uri }];
     setSelectedImagesState(updated);
-    dispatch(setSelectedImages(updated));
+    dispatch(dispatchSetSelectedImages(updated));
+
     // Next image or close
     if (currentCropIdx < pendingImages.length - 1) {
       setCurrentCropIdx(currentCropIdx + 1);
@@ -130,6 +210,11 @@ const ImagePickerScreen = () => {
 
   return (
     <View style={styles.container}>
+       <AutoCropManager 
+         imageUri={croppingUri}
+         onCropComplete={onCropComplete}
+         onCropError={onCropError}
+       />
       <Text style={styles.title}>Select Images</Text>
       <View style={styles.buttonRow}>
         <Button title="Pick from Gallery" onPress={pickImages} />

@@ -6,8 +6,10 @@ import { useSelector } from 'react-redux';
 import GridOverlay from '../components/canvas/GridOverlay';
 import { useCanvasRef } from '../context/CanvasRefContext';
 import { enhanceImage, isEnhancing } from '../services/ImageEnhancerService';
-import { applyFilters } from '../services/FilterService';
+import { FilterManager } from '../services/FilterService';
 import LoadingOverlay from '../components/common/LoadingOverlay';
+import * as FileSystem from 'expo-file-system';
+import { v4 as uuidv4 } from 'uuid';
 
 const A4_WIDTH = 2480;
 const A4_HEIGHT = 3508;
@@ -72,6 +74,7 @@ export default function CanvasEditorScreen() {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [filterLoading, setFilterLoading] = useState(false);
   const [activeFilter, setActiveFilter] = useState(null);
+  const [filteringImage, setFilteringImage] = useState(null); // { uri, zoneIdx, filterType }
 
   // Save current transform to history
   const saveToHistory = () => {
@@ -178,17 +181,48 @@ export default function CanvasEditorScreen() {
     }
   };
 
+  const onFilterComplete = async (resultUri) => {
+    try {
+      const base64Data = resultUri.split(',')[1];
+      const newUri = `${FileSystem.cacheDirectory}filter_${filteringImage.filterType}_${uuidv4()}.jpg`;
+      await FileSystem.writeAsStringAsync(newUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+      });
+
+      setEnhancedImages(prev => ({ ...prev, [filteringImage.zoneIdx]: newUri }));
+      setActiveFilter(filteringImage.filterType);
+      setFilterLoading(false);
+      setFilteringImage(null);
+      setFilterModalVisible(false);
+    } catch(e) {
+      onFilterError(e);
+    }
+  };
+
+  const onFilterError = (e) => {
+    console.error('Filter failed', e);
+    setFilterLoading(false);
+    setFilteringImage(null);
+    ToastAndroid.show('Filter failed', ToastAndroid.SHORT);
+  };
+
   // Filter handler
   const handleApplyFilter = async (filterType) => {
+    if (filterType === 'reset') {
+        // Reset logic: find the original URI and reset the enhanced one
+        // This part needs careful implementation based on how you track original vs. enhanced
+        return;
+    }
     setFilterLoading(true);
-    const imgIdx = currentIndex; // For single image, or loop for multi-image
+    const imgIdx = currentIndex;
     const img = selectedImages[imgIdx];
     const uri = enhancedImages[imgIdx] || img.uri;
-    const filteredUri = await applyFilters(uri, filterType);
-    setEnhancedImages(prev => ({ ...prev, [imgIdx]: filteredUri }));
-    setActiveFilter(filterType);
-    setFilterLoading(false);
-    setFilterModalVisible(false);
+    
+    setFilteringImage({
+        uri,
+        zoneIdx: imgIdx,
+        filterType
+    });
   };
 
   // Layout image rendering with enhance button
@@ -241,6 +275,12 @@ export default function CanvasEditorScreen() {
 
   return (
     <View style={styles.root} pointerEvents={enhancingZone !== null ? 'none' : 'auto'}>
+      <FilterManager
+        imageUri={filteringImage?.uri}
+        filterType={filteringImage?.filterType}
+        onFilterComplete={onFilterComplete}
+        onFilterError={onFilterError}
+      />
       {/* Layout Switcher */}
       <View style={styles.layoutSwitcher}>
         {LAYOUTS.map(l => (

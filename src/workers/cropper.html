@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenCV.js Cropper</title>
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+</head>
+<body>
+    <script type="text/javascript">
+        function onOpenCvReady() {
+            cv['onRuntimeInitialized'] = () => {
+                // OpenCV is ready
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+            };
+        }
+
+        document.addEventListener('message', event => {
+            const { type, payload } = JSON.parse(event.data);
+            if (type === 'PROCESS_IMAGE') {
+                processImage(payload.uri);
+            }
+        });
+
+        function processImage(base64Image) {
+            try {
+                const img = new Image();
+                img.src = base64Image;
+                img.onload = () => {
+                    const src = cv.imread(img);
+                    let dst = new cv.Mat();
+                    let gray = new cv.Mat();
+                    let blurred = new cv.Mat();
+                    let canny = new cv.Mat();
+
+                    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+                    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0, 0, cv.BORDER_DEFAULT);
+                    cv.Canny(blurred, canny, 75, 200);
+
+                    let contours = new cv.MatVector();
+                    let hierarchy = new cv.Mat();
+                    cv.findContours(canny, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+                    if (contours.size() === 0) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: 'No contours found' }));
+                        return;
+                    }
+                    
+                    let largestContour;
+                    let maxArea = 0;
+                    for (let i = 0; i < contours.size(); i++) {
+                        let cnt = contours.get(i);
+                        let area = cv.contourArea(cnt, false);
+                        if (area > maxArea) {
+                            maxArea = area;
+                            largestContour = cnt;
+                        }
+                    }
+
+                    if (!largestContour) {
+                        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: 'Could not find largest contour' }));
+                        return;
+                    }
+
+                    // Get bounding box and crop
+                    let rect = cv.boundingRect(largestContour);
+                    let cropped = new cv.Mat(src, rect);
+
+                    // Convert to base64
+                    const canvas = document.createElement('canvas');
+                    cv.imshow(canvas, cropped);
+                    const resultBase64 = canvas.toDataURL('image/jpeg');
+
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SUCCESS', payload: { uri: resultBase64 } }));
+
+                    // Clean up
+                    src.delete();
+                    dst.delete();
+                    gray.delete();
+                    blurred.delete();
+                    canny.delete();
+                    contours.delete();
+                    hierarchy.delete();
+                    if(largestContour) largestContour.delete();
+                    cropped.delete();
+                };
+                img.onerror = (e) => {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: 'Image could not be loaded' }));
+                }
+
+            } catch (error) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: error.message }));
+            }
+        }
+    </script>
+</body>
+</html> 

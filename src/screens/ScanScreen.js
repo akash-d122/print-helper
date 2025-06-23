@@ -195,7 +195,7 @@ export default function ScanScreen() {
 
     const pickImage = async () => {
         let result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            mediaTypes: ImagePicker.MediaType.Images,
             allowsEditing: false,
             quality: 1,
             base64: true,

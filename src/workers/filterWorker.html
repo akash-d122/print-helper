@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenCV.js Filter</title>
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();"></script>
+</head>
+<body>
+    <script type="text/javascript">
+        function onOpenCvReady() {
+            cv['onRuntimeInitialized'] = () => {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
+            };
+        }
+
+        document.addEventListener('message', event => {
+            const { type, payload } = JSON.parse(event.data);
+            if (type === 'APPLY_FILTER') {
+                applyFilter(payload.uri, payload.filterType);
+            }
+        });
+
+        function applyFilter(base64Image, filterType) {
+            try {
+                const img = new Image();
+                img.src = base64Image;
+                img.onload = () => {
+                    let src = cv.imread(img);
+                    let dst = new cv.Mat();
+
+                    if (filterType === 'grayscale') {
+                        cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+                    } else if (filterType === 'bw') {
+                        cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+                        cv.threshold(dst, dst, 128, 255, cv.THRESH_BINARY);
+                    } else if (filterType === 'contrast') {
+                        cv.cvtColor(src, dst, cv.COLOR_RGBA2GRAY, 0);
+                        cv.equalizeHist(dst, dst);
+                    } else {
+                        // No filter or unknown, return original
+                        dst = src.clone();
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    cv.imshow(canvas, dst);
+                    const resultBase64 = canvas.toDataURL('image/jpeg');
+                    
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'SUCCESS', payload: { uri: resultBase64 } }));
+
+                    src.delete();
+                    dst.delete();
+                };
+                img.onerror = () => {
+                     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: 'Image could not be loaded in worker' }));
+                }
+            } catch (error) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ERROR', payload: error.message }));
+            }
+        }
+    </script>
+</body>
+</html> 
