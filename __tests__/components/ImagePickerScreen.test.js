@@ -2,11 +2,8 @@ import React from 'react';
 import { renderWithProvider } from '../../test-utils/test-utils';
 import ImagePickerScreen from '../../src/screens/ImagePickerScreen';
 import { fireEvent, act } from '@testing-library/react-native';
-// import * as OpenCV from 'react-native-opencv3';
 import * as redux from 'react-redux';
 
-// jest.mock('react-native-opencv3');
-// jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: jest.fn() }) }));
 jest.mock('expo-image-picker', () => ({
   requestMediaLibraryPermissionsAsync: jest.fn().mockResolvedValue({ status: 'granted' }),
   launchImageLibraryAsync: jest.fn().mockResolvedValue({ 
@@ -31,13 +28,6 @@ describe('ImagePickerScreen', () => {
     // For brevity, just check UI renders
     expect(getByText('Select Images')).toBeTruthy();
   });
-
-  /*
-  it('handles auto crop and updates Redux', async () => {
-    OpenCV.cropAsync.mockResolvedValue('base64-cropped-image');
-    // ...simulate auto crop flow and assert dispatch called
-  });
-  */
 
   it('handles manual crop navigation', async () => {
     // ...simulate manual crop navigation and callback

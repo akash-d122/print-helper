@@ -6,5 +6,5 @@
  */
 export async function autoCropImage(uri) {
   console.warn('autoCropImage is a placeholder and does not perform cropping.');
-  return uri;
-}
+    return uri;
+  }

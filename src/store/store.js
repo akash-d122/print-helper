@@ -29,6 +29,10 @@ export const store = configureStore({
     getDefaultMiddleware({
       serializableCheck: {
         ignoredActions: [FLUSH, REHYDRATE, PAUSE, PERSIST, PURGE, REGISTER],
+        ignoredPaths: [
+          'persist',
+          'images.selectedImages', // images are plain objects, but if you ever add non-serializables, this helps
+        ],
       },
     }),
 });
